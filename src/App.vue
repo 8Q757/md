@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import CodemirrorEditor from '@/views/CodemirrorEditor.vue'
 </script>
 
@@ -7,7 +7,6 @@ import CodemirrorEditor from '@/views/CodemirrorEditor.vue'
 </template>
 
 <style lang="less">
-// 仿 uniapp 外层全屏
 html,
 body,
 #app {
@@ -15,6 +14,11 @@ body,
   height: 100vh;
   margin: 0;
   padding: 0;
+}
+
+// 抵消下拉菜单开启时带来的样式
+body {
+  pointer-events: initial !important;
 }
 
 ::-webkit-scrollbar {
@@ -77,10 +81,5 @@ body,
 // 修复颜色选择器下拉箭头位置
 .el-icon.el-color-picker__icon.is-icon-arrow-down {
   position: absolute;
-}
-
-// 参见：https://github.com/element-plus/element-plus/issues/11662
-.el-dropdown-link:focus-visible {
-  outline: unset;
 }
 </style>

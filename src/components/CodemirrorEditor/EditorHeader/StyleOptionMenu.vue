@@ -1,33 +1,20 @@
-<script setup>
+<script setup lang="ts">
+import type { IConfigOption } from '@/types'
 import {
-  DropdownMenuItem,
-  DropdownMenuPortal,
-  DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-} from '@/components/ui/dropdown-menu'
+  MenubarItem,
+  MenubarSub,
+  MenubarSubContent,
+  MenubarSubTrigger,
+} from '@/components/ui/menubar'
 
-const props = defineProps({
-  title: {
-    type: String,
-    required: true,
-  },
-  options: {
-    type: Array,
-    required: true,
-  },
-  current: {
-    type: String,
-    required: true,
-  },
-  change: {
-    type: Function,
-    required: true,
-  },
-})
+const props = defineProps<{
+  title: string
+  options: IConfigOption[]
+  current: string
+  change: <T>(val: T) => void
+}>()
 
-function setStyle(title, value) {
+function setStyle(title: string, value: string) {
   switch (title) {
     case `字体`:
       return { fontFamily: value }
@@ -42,30 +29,28 @@ function setStyle(title, value) {
 </script>
 
 <template>
-  <DropdownMenuSub>
-    <DropdownMenuSubTrigger>
+  <MenubarSub>
+    <MenubarSubTrigger>
       <el-icon class="mr-2 h-4 w-4" />
       <span>{{ props.title }}</span>
-    </DropdownMenuSubTrigger>
-    <DropdownMenuPortal>
-      <DropdownMenuSubContent class="max-h-56 overflow-auto">
-        <DropdownMenuItem
-          v-for="{ label, value, desc } in options"
-          :key="value"
-          :label="label"
-          :model-value="value"
-          class="w-50"
-          @click="change(value)"
-        >
-          <el-icon class="mr-2 h-4 w-4" :style="{ opacity: +(current === value) }">
-            <ElIconCheck />
-          </el-icon>
-          {{ label }}
-          <DropdownMenuShortcut :style="setStyle(title, value)">
-            {{ desc }}
-          </DropdownMenuShortcut>
-        </DropdownMenuItem>
-      </DropdownMenuSubContent>
-    </DropdownMenuPortal>
-  </DropdownMenuSub>
+    </MenubarSubTrigger>
+    <MenubarSubContent class="max-h-56 overflow-auto">
+      <MenubarItem
+        v-for="{ label, value, desc } in options"
+        :key="value"
+        :label="label"
+        :model-value="value"
+        class="w-50"
+        @click="change(value)"
+      >
+        <el-icon class="mr-2 h-4 w-4" :style="{ opacity: +(current === value) }">
+          <ElIconCheck />
+        </el-icon>
+        {{ label }}
+        <DropdownMenuShortcut :style="setStyle(title, value)">
+          {{ desc }}
+        </DropdownMenuShortcut>
+      </MenubarItem>
+    </MenubarSubContent>
+  </MenubarSub>
 </template>

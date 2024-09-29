@@ -1,9 +1,10 @@
-<script setup>
+<script setup lang="ts">
+import { useDisplayStore, useStore } from '@/stores'
+
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-import { useStore } from '@/stores'
-
 const store = useStore()
+const displayStore = useDisplayStore()
 
 function editTabName() {
   ElMessageBox.prompt(`请输入新的方案名称`, `编辑方案名称`, {
@@ -23,7 +24,7 @@ function editTabName() {
     })
 }
 
-function handleTabsEdit(targetName, action) {
+function handleTabsEdit(targetName: string, action: string) {
   if (action === `add`) {
     ElMessageBox.prompt(`请输入方案名称`, `新建自定义 CSS`, {
       confirmButtonText: `确认`,
@@ -67,7 +68,7 @@ function handleTabsEdit(targetName, action) {
 
 <template>
   <transition enter-active-class="bounceInRight">
-    <el-col v-show="store.isShowCssEditor" :span="8" class="cssEditor-wrapper order-1 h-full flex flex-col">
+    <el-col v-show="displayStore.isShowCssEditor" :span="8" class="cssEditor-wrapper order-1 h-full flex flex-col border-l-1">
       <el-tabs
         v-model="store.cssContentConfig.active"
         type="border-card"
@@ -86,7 +87,7 @@ function handleTabsEdit(targetName, action) {
             <el-icon
               v-if="store.cssContentConfig.active === item.name"
               class="ml-1"
-              @click="editTabName(item.name)"
+              @click="editTabName()"
             >
               <ElIconEditPen />
             </el-icon>
@@ -142,7 +143,7 @@ function handleTabsEdit(targetName, action) {
 }
 
 :deep(.el-tabs__content) {
-  padding: 0;
+  padding: 0 !important;
 }
 
 // 当 tab 为激活状态时，隐藏关闭按钮

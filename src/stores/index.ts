@@ -1,19 +1,15 @@
-import { markRaw, onMounted, ref } from 'vue'
-import { createPinia, defineStore } from 'pinia'
-import { marked } from 'marked'
-import CodeMirror from 'codemirror'
-import { useDark, useStorage, useToggle } from '@vueuse/core'
-import { ElMessage, ElMessageBox } from 'element-plus'
-
-import { codeBlockThemeOptions, colorOptions, fontFamilyOptions, fontSizeOptions, legendOptions, themeMap, themeOptions } from '@/config'
-import WxRenderer from '@/utils/wx-renderer'
 import DEFAULT_CONTENT from '@/assets/example/markdown.md?raw'
 import DEFAULT_CSS_CONTENT from '@/assets/example/theme-css.txt?raw'
-import { addPrefix, css2json, customCssWithTemplate, downloadMD, exportHTML, formatCss, formatDoc, setColorWithCustomTemplate, setFontSizeWithTemplate, setTheme } from '@/utils'
+import { altKey, codeBlockThemeOptions, colorOptions, fontFamilyOptions, fontSizeOptions, legendOptions, shiftKey, themeMap, themeOptions } from '@/config'
+import { addPrefix, css2json, customCssWithTemplate, customizeTheme, downloadMD, exportHTML, formatDoc } from '@/utils'
+import { initRenderer } from '@/utils/renderer'
+import { useDark, useStorage, useToggle } from '@vueuse/core'
 
-const defaultKeyMap = CodeMirror.keyMap.default
-const modPrefix
-  = defaultKeyMap === CodeMirror.keyMap.macDefault ? `Cmd` : `Ctrl`
+import CodeMirror from 'codemirror'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { marked } from 'marked'
+import { defineStore } from 'pinia'
+import { computed, markRaw, onMounted, ref, toRaw, watch } from 'vue'
 
 export const useStore = defineStore(`store`, () => {
   // 是否开启深色模式
@@ -32,39 +28,38 @@ export const useStore = defineStore(`store`, () => {
   const isCiteStatus = useStorage(`isCiteStatus`, false)
   const toggleCiteStatus = useToggle(isCiteStatus)
 
+  // 是否开启段落首行缩进
+  const isUseIndent = useStorage(addPrefix(`use_indent`), false)
+  const toggleUseIndent = useToggle(isUseIndent)
+
   const output = ref(``)
 
   // 文本字体
-  const theme = useStorage(addPrefix(`theme`), themeOptions[0].value)
+  const theme = useStorage<keyof typeof themeMap>(addPrefix(`theme`), themeOptions[0].value)
   // 文本字体
   const fontFamily = useStorage(`fonts`, fontFamilyOptions[0].value)
   // 文本大小
   const fontSize = useStorage(`size`, fontSizeOptions[2].value)
-  // 文本颜色
-  const fontColor = useStorage(`color`, colorOptions[0].value)
+  // 主色
+  const primaryColor = useStorage(`color`, colorOptions[0].value)
   // 代码块主题
-  const codeBlockTheme = useStorage(`codeBlockTheme`, codeBlockThemeOptions[2].value)
+  const codeBlockTheme = useStorage(`codeBlockTheme`, codeBlockThemeOptions[23].value)
   // 图注格式
   const legend = useStorage(`legend`, legendOptions[3].value)
 
-  const fontSizeNumber = fontSize.value.replace(`px`, ``)
-
-  const wxRenderer = new WxRenderer({
-    theme: setTheme(themeMap[theme.value], fontSizeNumber, fontColor.value, theme.value === `default`),
-    fonts: fontFamily.value,
-    size: fontSize.value,
-  })
+  const fontSizeNumber = computed(() => Number(fontSize.value.replace(`px`, ``)))
 
   // 内容编辑器编辑器
-  const editor = ref(null)
+  const editor = ref<CodeMirror.EditorFromTextArea | null>(null)
   // 编辑区域内容
-  const editorContent = useStorage(`__editor_content`, formatDoc(DEFAULT_CONTENT))
+  const editorContent = useStorage(`__editor_content`, DEFAULT_CONTENT)
 
   // 格式化文档
   const formatContent = () => {
-    const doc = formatDoc(editor.value.getValue())
-    editorContent.value = doc
-    editor.value.setValue(doc)
+    formatDoc((editor.value!).getValue()).then((doc) => {
+      editorContent.value = doc;
+      (editor.value!).setValue(doc)
+    })
   }
 
   // 切换 highlight.js 代码主题
@@ -84,37 +79,85 @@ export const useStore = defineStore(`store`, () => {
     }
   }
 
+  // 自义定 CSS 编辑器
+  const cssEditor = ref<CodeMirror.EditorFromTextArea | null>(null)
+  const setCssEditorValue = (content: string) => {
+    (cssEditor.value!).setValue(content)
+  }
+  // 自定义 CSS 内容
+  const cssContent = useStorage(`__css_content`, DEFAULT_CSS_CONTENT)
+  const cssContentConfig = useStorage(addPrefix(`css_content_config`), {
+    active: `方案1`,
+    tabs: [
+      {
+        title: `方案1`,
+        name: `方案1`,
+        // 兼容之前的方案
+        content: cssContent.value || DEFAULT_CSS_CONTENT,
+      },
+    ],
+  })
+  onMounted(() => {
+    // 清空过往历史记录
+    cssContent.value = ``
+  })
+  const getCurrentTab = () => cssContentConfig.value.tabs.find((tab) => {
+    return tab.name === cssContentConfig.value.active
+  })!
+  const tabChanged = (name: string) => {
+    cssContentConfig.value.active = name
+    const content = cssContentConfig.value.tabs.find((tab) => {
+      return tab.name === name
+    })!.content
+    setCssEditorValue(content)
+  }
+
+  // 重命名 css 方案
+  const renameTab = (name: string) => {
+    const tab = getCurrentTab()!
+    tab.title = name
+    tab.name = name
+    cssContentConfig.value.active = name
+  }
+
+  const addCssContentTab = (name: string) => {
+    cssContentConfig.value.tabs.push({
+      name,
+      title: name,
+      content: DEFAULT_CSS_CONTENT,
+    })
+    cssContentConfig.value.active = name
+    setCssEditorValue(DEFAULT_CSS_CONTENT)
+  }
+  const validatorTabName = (val: string) => {
+    return cssContentConfig.value.tabs.every(({ name }) => name !== val)
+  }
+
+  const renderer = initRenderer({
+    theme: customCssWithTemplate(css2json(getCurrentTab().content), primaryColor.value, customizeTheme(themeMap[theme.value], { fontSize: fontSizeNumber.value, color: primaryColor.value })),
+    fonts: fontFamily.value,
+    size: fontSize.value,
+    isUseIndent: isUseIndent.value,
+  })
+
   // 更新编辑器
   const editorRefresh = () => {
     codeThemeChange()
-
-    const renderer = wxRenderer.getRenderer(isCiteStatus.value)
-    marked.setOptions({ renderer })
-    let outputTemp = marked.parse(editor.value.getValue(0))
+    renderer.reset({ status: isCiteStatus.value, legend: legend.value, isUseIndent: isUseIndent.value })
+    let outputTemp = marked.parse(editor.value!.getValue()) as string
 
     // 去除第一行的 margin-top
     outputTemp = outputTemp.replace(/(style=".*?)"/, `$1;margin-top: 0"`)
-    if (isCiteStatus.value) {
-      // 引用脚注
-      outputTemp += wxRenderer.buildFootnotes()
-      // 附加的一些 style
-      outputTemp += wxRenderer.buildAddition()
-    }
+    // 引用脚注
+    outputTemp += renderer.buildFootnotes()
+    // 附加的一些 style
+    outputTemp += renderer.buildAddition()
 
     if (isMacCodeBlock.value) {
       outputTemp += `
         <style>
-          .hljs.code__pre::before {
-            position: initial;
-            padding: initial;
-            content: '';
-            display: block;
-            height: 25px;
-            background-color: transparent;
-            background-image: url("https://doocs.oss-cn-shenzhen.aliyuncs.com/img/123.svg");
-            background-position: 14px 10px!important;
-            background-repeat: no-repeat;
-            background-size: 40px!important;
+          .hljs.code__pre > .mac-sign {
+            display: inline-block;
           }
 
           .hljs.code__pre {
@@ -134,101 +177,57 @@ export const useStore = defineStore(`store`, () => {
     output.value = outputTemp
   }
 
-  // 自义定 CSS 编辑器
-  const cssEditor = ref(null)
-  const setCssEditorValue = (content) => {
-    cssEditor.value.setValue(content)
-  }
-  // 自定义 CSS 内容
-  const cssContent = useStorage(`__css_content`, DEFAULT_CSS_CONTENT)
-  const cssContentConfig = useStorage(addPrefix(`css_content_config`), {
-    active: `方案 1`,
-    tabs: [
-      {
-        title: `方案 1`,
-        name: `方案 1`,
-        // 兼容之前的方案
-        content: cssContent.value || DEFAULT_CSS_CONTENT,
-      },
-    ],
-  })
-  const getCurrentTab = () => cssContentConfig.value.tabs.find((tab) => {
-    return tab.name === cssContentConfig.value.active
-  })
-  const tabChanged = (name) => {
-    cssContentConfig.value.active = name
-    const content = cssContentConfig.value.tabs.find((tab) => {
-      return tab.name === name
-    }).content
-    setCssEditorValue(content)
-  }
-
-  // 重命名 css 方案
-  const renameTab = (name) => {
-    const tab = getCurrentTab()
-    tab.title = name
-    tab.name = name
-    cssContentConfig.value.active = name
-  }
-
-  const addCssContentTab = (name) => {
-    cssContentConfig.value.tabs.push({
-      name,
-      title: name,
-      content: DEFAULT_CSS_CONTENT,
-    })
-    cssContentConfig.value.active = name
-    setCssEditorValue(DEFAULT_CSS_CONTENT)
-  }
-  const validatorTabName = (val) => {
-    return cssContentConfig.value.tabs.every(({ name }) => name !== val)
-  }
   // 更新 CSS
   const updateCss = () => {
-    const json = css2json(cssEditor.value.getValue())
-    let t = setTheme(themeMap[theme.value], fontSizeNumber, fontColor.value, theme.value === `default`)
-
-    t = customCssWithTemplate(json, fontColor.value, t)
-    wxRenderer.setOptions({
-      theme: t,
+    const json = css2json(cssEditor.value!.getValue())
+    const newTheme = customCssWithTemplate(json, primaryColor.value, customizeTheme(themeMap[theme.value], { fontSize: fontSizeNumber.value, color: primaryColor.value }))
+    renderer.setOptions({
+      theme: newTheme,
     })
     editorRefresh()
   }
   // 初始化 CSS 编辑器
   onMounted(() => {
-    const cssEditorDom = document.querySelector(`#cssEditor`)
+    const cssEditorDom = document.querySelector<HTMLTextAreaElement>(`#cssEditor`)!
     cssEditorDom.value = getCurrentTab().content
-
+    const theme = isDark.value ? `darcula` : `xq-light`
     cssEditor.value = markRaw(
       CodeMirror.fromTextArea(cssEditorDom, {
         mode: `css`,
-        theme: `style-mirror`,
+        theme,
         lineNumbers: false,
         lineWrapping: true,
+        styleActiveLine: true,
         matchBrackets: true,
         autofocus: true,
         extraKeys: {
-          [`${modPrefix}-F`]: function autoFormat(editor) {
-            const doc = formatCss(editor.getValue())
-            getCurrentTab().content = doc
-            editor.setValue(doc)
+          [`${shiftKey}-${altKey}-F`]: function autoFormat(editor: CodeMirror.Editor) {
+            formatDoc(editor.getValue(), `css`).then((doc) => {
+              getCurrentTab().content = doc
+              editor.setValue(doc)
+            })
           },
         },
-      }),
+      } as never),
     )
 
     // 自动提示
     cssEditor.value.on(`keyup`, (cm, e) => {
       if ((e.keyCode >= 65 && e.keyCode <= 90) || e.keyCode === 189) {
-        cm.showHint(e)
+        (cm as any).showHint(e)
       }
     })
 
     // 实时保存
     cssEditor.value.on(`update`, () => {
       updateCss()
-      getCurrentTab().content = cssEditor.value.getValue()
+      getCurrentTab().content = cssEditor.value!.getValue()
     })
+  })
+
+  watch(isDark, () => {
+    const theme = isDark.value ? `darcula` : `xq-light`
+    toRaw(cssEditor.value)?.setOption?.(`theme`, theme)
   })
 
   // 重置样式
@@ -240,7 +239,7 @@ export const useStore = defineStore(`store`, () => {
     fontFamily.value = fontFamilyOptions[0].value
     fontFamily.value = fontFamilyOptions[0].value
     fontSize.value = fontSizeOptions[2].value
-    fontColor.value = colorOptions[0].value
+    primaryColor.value = colorOptions[0].value
     codeBlockTheme.value = codeBlockThemeOptions[2].value
     legend.value = legendOptions[3].value
 
@@ -256,33 +255,33 @@ export const useStore = defineStore(`store`, () => {
       ],
     }
 
-    cssEditor.value.setValue(DEFAULT_CSS_CONTENT)
+    cssEditor.value!.setValue(DEFAULT_CSS_CONTENT)
 
     updateCss()
     editorRefresh()
   }
 
   // 为函数添加刷新编辑器的功能
-  const withAfterRefresh = fn => (...rest) => {
+  const withAfterRefresh = (fn: (...rest: any[]) => void) => (...rest: any[]) => {
     fn(...rest)
     editorRefresh()
   }
 
-  const getTheme = (size, color) => {
-    const t = setFontSizeWithTemplate(themeMap[theme.value])(size.replace(`px`, ``), theme.value === `default`)
-    return setColorWithCustomTemplate(t, color, theme.value === `default`)
+  const getTheme = (size: string, color: string) => {
+    const newTheme = themeMap[theme.value]
+    const fontSize = Number(size.replace(`px`, ``))
+    return customCssWithTemplate(css2json(getCurrentTab().content), color, customizeTheme(newTheme, { fontSize, color }))
   }
 
-  const themeChanged = withAfterRefresh((newTheme) => {
-    wxRenderer.setOptions({
-      theme: setTheme(themeMap[newTheme], fontSizeNumber, fontColor.value, newTheme === `default`),
+  const themeChanged = withAfterRefresh((newTheme: keyof typeof themeMap) => {
+    renderer.setOptions({
+      theme: customCssWithTemplate(css2json(getCurrentTab().content), primaryColor.value, customizeTheme(themeMap[newTheme], { fontSize: fontSizeNumber.value })),
     })
-
     theme.value = newTheme
   })
 
   const fontChanged = withAfterRefresh((fonts) => {
-    wxRenderer.setOptions({
+    renderer.setOptions({
       fonts,
     })
 
@@ -290,8 +289,8 @@ export const useStore = defineStore(`store`, () => {
   })
 
   const sizeChanged = withAfterRefresh((size) => {
-    const theme = getTheme(size, fontColor.value)
-    wxRenderer.setOptions({
+    const theme = getTheme(size, primaryColor.value)
+    renderer.setOptions({
       size,
       theme,
     })
@@ -301,11 +300,11 @@ export const useStore = defineStore(`store`, () => {
 
   const colorChanged = withAfterRefresh((newColor) => {
     const theme = getTheme(fontSize.value, newColor)
-    wxRenderer.setOptions({
+    renderer.setOptions({
       theme,
     })
 
-    fontColor.value = newColor
+    primaryColor.value = newColor
   })
 
   const codeBlockThemeChanged = withAfterRefresh((newTheme) => {
@@ -324,15 +323,19 @@ export const useStore = defineStore(`store`, () => {
     toggleCiteStatus()
   })
 
+  const useIndentChanged = withAfterRefresh(() => {
+    toggleUseIndent()
+  })
+
   // 导出编辑器内容为 HTML，并且下载到本地
   const exportEditorContent2HTML = () => {
     exportHTML()
-    document.querySelector(`#output`).innerHTML = output.value
+    document.querySelector(`#output`)!.innerHTML = output.value
   }
 
   // 导出编辑器内容到本地
   const exportEditorContent2MD = () => {
-    downloadMD(editor.value.getValue())
+    downloadMD(editor.value!.getValue())
   }
 
   // 导入 Markdown 文档
@@ -343,7 +346,7 @@ export const useStore = defineStore(`store`, () => {
     input.name = `filename`
     input.accept = `.md`
     input.onchange = () => {
-      const file = input.files[0]
+      const file = input.files![0]
       if (!file) {
         return
       }
@@ -351,7 +354,7 @@ export const useStore = defineStore(`store`, () => {
       const reader = new FileReader()
       reader.readAsText(file)
       reader.onload = (event) => {
-        editor.value.setValue(formatDoc(event.target.result))
+        (editor.value!).setValue((event.target !).result as string)
         ElMessage.success(`文档导入成功`)
       }
     }
@@ -381,27 +384,11 @@ export const useStore = defineStore(`store`, () => {
         })
       })
       .catch(() => {
-        editor.value.focus()
+        (editor.value!).focus()
       })
   }
 
-  const isShowCssEditor = ref(false)
-  const toggleShowCssEditor = useToggle(isShowCssEditor)
-
-  const isShowInsertFormDialog = ref(false)
-  const toggleShowInsertFormDialog = useToggle(isShowInsertFormDialog)
-
-  const isShowUploadImgDialog = ref(false)
-  const toggleShowUploadImgDialog = useToggle(isShowUploadImgDialog)
-
   return {
-    isShowCssEditor,
-    toggleShowCssEditor,
-    isShowInsertFormDialog,
-    toggleShowInsertFormDialog,
-    isShowUploadImgDialog,
-    toggleShowUploadImgDialog,
-
     isDark,
     toggleDark,
 
@@ -411,6 +398,8 @@ export const useStore = defineStore(`store`, () => {
     isMacCodeBlock,
     isCiteStatus,
     citeStatusChanged,
+    isUseIndent,
+    useIndentChanged,
 
     output,
     editor,
@@ -418,7 +407,7 @@ export const useStore = defineStore(`store`, () => {
     theme,
     fontFamily,
     fontSize,
-    fontColor,
+    primaryColor,
     codeBlockTheme,
     legend,
 
@@ -450,4 +439,25 @@ export const useStore = defineStore(`store`, () => {
   }
 })
 
-export default createPinia()
+export const useDisplayStore = defineStore(`display`, () => {
+  // 是否展示 CSS 编辑器
+  const isShowCssEditor = ref(false)
+  const toggleShowCssEditor = useToggle(isShowCssEditor)
+
+  // 是否展示插入表格对话框
+  const isShowInsertFormDialog = ref(false)
+  const toggleShowInsertFormDialog = useToggle(isShowInsertFormDialog)
+
+  // 是否展示上传图片对话框
+  const isShowUploadImgDialog = ref(false)
+  const toggleShowUploadImgDialog = useToggle(isShowUploadImgDialog)
+
+  return {
+    isShowCssEditor,
+    toggleShowCssEditor,
+    isShowInsertFormDialog,
+    toggleShowInsertFormDialog,
+    isShowUploadImgDialog,
+    toggleShowUploadImgDialog,
+  }
+})

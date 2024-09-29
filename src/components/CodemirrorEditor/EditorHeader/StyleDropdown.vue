@@ -1,33 +1,31 @@
-<script setup>
-import { nextTick, ref } from 'vue'
-import { storeToRefs } from 'pinia'
-
-import StyleOptionMenu from './StyleOptionMenu.vue'
-
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-
+<script setup lang="ts">
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card'
+import {
+  codeBlockThemeOptions,
+  colorOptions,
+  fontFamilyOptions,
+  fontSizeOptions,
+  legendOptions,
+  themeOptions,
+} from '@/config'
 
-import { codeBlockThemeOptions, colorOptions, fontFamilyOptions, fontSizeOptions, legendOptions, themeOptions } from '@/config'
-import { useStore } from '@/stores'
+import { useDisplayStore, useStore } from '@/stores'
+import { storeToRefs } from 'pinia'
+import { ref } from 'vue'
+import StyleOptionMenu from './StyleOptionMenu.vue'
 
 const store = useStore()
+const { toggleShowCssEditor } = useDisplayStore()
 
 const {
   theme,
   fontFamily,
   fontSize,
-  fontColor,
+  primaryColor,
   codeBlockTheme,
   legend,
   isMacCodeBlock,
@@ -43,46 +41,50 @@ const {
   codeBlockThemeChanged,
   legendChanged,
   macCodeBlockChanged,
-  toggleShowCssEditor,
 } = store
 
-const colorPicker = ref(null)
+const colorPicker = ref<HTMLElement & { show: () => void } | null>(null)
 
 function showPicker() {
-  colorPicker.value.show()
+  colorPicker.value?.show()
 }
 
 // 自定义CSS样式
 function customStyle() {
   toggleShowCssEditor()
-  nextTick(() => {
-    if (!cssEditor.value) {
-      cssEditor.value.refresh()
-    }
-  })
   setTimeout(() => {
-    cssEditor.value.refresh()
+    cssEditor.value!.refresh()
   }, 50)
 }
 </script>
 
 <template>
-  <DropdownMenu>
-    <DropdownMenuTrigger>
-      样式
-      <el-icon class="ml-2">
-        <ElIconArrowDown />
-      </el-icon>
-    </DropdownMenuTrigger>
-    <DropdownMenuContent class="w-56">
-      <StyleOptionMenu title="主题" :options="themeOptions" :current="theme" :change="themeChanged" />
-      <DropdownMenuSeparator />
-      <StyleOptionMenu title="字体" :options="fontFamilyOptions" :current="fontFamily" :change="fontChanged" />
-      <StyleOptionMenu title="字号" :options="fontSizeOptions" :current="fontSize" :change="sizeChanged" />
+  <MenubarMenu>
+    <MenubarTrigger> 样式 </MenubarTrigger>
+    <MenubarContent class="w-56" align="start">
+      <StyleOptionMenu
+        title="主题"
+        :options="themeOptions"
+        :current="theme"
+        :change="themeChanged"
+      />
+      <MenubarSeparator />
+      <StyleOptionMenu
+        title="字体"
+        :options="fontFamilyOptions"
+        :current="fontFamily"
+        :change="fontChanged"
+      />
+      <StyleOptionMenu
+        title="字号"
+        :options="fontSizeOptions"
+        :current="fontSize"
+        :change="sizeChanged"
+      />
       <StyleOptionMenu
         title="主题色"
         :options="colorOptions"
-        :current="fontColor"
+        :current="primaryColor"
         :change="colorChanged"
       />
       <StyleOptionMenu
@@ -91,18 +93,23 @@ function customStyle() {
         :current="codeBlockTheme"
         :change="codeBlockThemeChanged"
       />
-      <StyleOptionMenu title="图注格式" :options="legendOptions" :current="legend" :change="legendChanged" />
-      <DropdownMenuSeparator />
-      <DropdownMenuItem @click.self.prevent="showPicker">
+      <StyleOptionMenu
+        title="图注格式"
+        :options="legendOptions"
+        :current="legend"
+        :change="legendChanged"
+      />
+      <MenubarSeparator />
+      <MenubarItem @click.self.prevent="showPicker">
         <HoverCard :open-delay="100">
           <HoverCardTrigger class="w-full flex">
             <el-icon class="mr-2 h-4 w-4" />
             自定义主题色
           </HoverCardTrigger>
           <HoverCardContent side="right" class="w-min">
-            <el-color-picker
+            <ElColorPicker
               ref="colorPicker"
-              v-model="fontColor"
+              v-model="primaryColor"
               :teleported="false"
               show-alpha
               class="ml-auto"
@@ -116,7 +123,7 @@ function customStyle() {
         自定义主题色
         <el-color-picker
           ref="colorPicker"
-          v-model="fontColor"
+          v-model="primaryColor"
           :teleported="false"
           show-alpha
           class="ml-auto"
@@ -124,23 +131,23 @@ function customStyle() {
           @change="colorChanged"
           @click="showPicker"
         /> -->
-      </DropdownMenuItem>
-      <DropdownMenuItem @click="customStyle">
+      </MenubarItem>
+      <MenubarItem @click="customStyle">
         <el-icon class="mr-2 h-4 w-4" />
         自定义 CSS
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem @click="macCodeBlockChanged">
+      </MenubarItem>
+      <MenubarSeparator />
+      <MenubarItem @click="macCodeBlockChanged">
         <el-icon class="mr-2 h-4 w-4" :class="{ 'opacity-0': !isMacCodeBlock }">
           <ElIconCheck />
         </el-icon>
         Mac 代码块
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem divided @click="resetStyleConfirm">
+      </MenubarItem>
+      <MenubarSeparator />
+      <MenubarItem divided @click="resetStyleConfirm">
         <el-icon class="mr-2 h-4 w-4" />
         重置
-      </DropdownMenuItem>
-    </DropdownMenuContent>
-  </DropdownMenu>
+      </MenubarItem>
+    </MenubarContent>
+  </MenubarMenu>
 </template>

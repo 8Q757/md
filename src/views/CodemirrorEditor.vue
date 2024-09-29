@@ -1,33 +1,40 @@
-<script setup>
-import { onMounted, ref } from 'vue'
-import { storeToRefs } from 'pinia'
-import { ElMessage } from 'element-plus'
-import CodeMirror from 'codemirror'
-
-import fileApi from '@/utils/file'
-import { useStore } from '@/stores'
-
+<script setup lang="ts">
+import type { ComponentPublicInstance } from 'vue'
+import CssEditor from '@/components/CodemirrorEditor/CssEditor.vue'
 import EditorHeader from '@/components/CodemirrorEditor/EditorHeader/index.vue'
 import InsertFormDialog from '@/components/CodemirrorEditor/InsertFormDialog.vue'
-import RightClickMenu from '@/components/CodemirrorEditor/RightClickMenu.vue'
 import UploadImgDialog from '@/components/CodemirrorEditor/UploadImgDialog.vue'
-import CssEditor from '@/components/CodemirrorEditor/CssEditor.vue'
-import RunLoading from '@/components/RunLoading.vue'
 
+import RunLoading from '@/components/RunLoading.vue'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
+
+import { altKey, altSign, ctrlKey, shiftKey, shiftSign } from '@/config'
+import { useDisplayStore, useStore } from '@/stores'
 import {
   checkImage,
   formatDoc,
   toBase64,
 } from '@/utils'
+import fileApi from '@/utils/file'
+import CodeMirror from 'codemirror'
 
-import 'codemirror/mode/javascript/javascript'
+import { ElCol, ElMessage } from 'element-plus'
 
-const defaultKeyMap = CodeMirror.keyMap.default
-const modPrefix
-  = defaultKeyMap === CodeMirror.keyMap.macDefault ? `Cmd` : `Ctrl`
+import { storeToRefs } from 'pinia'
+
+import { onMounted, ref, toRaw, watch } from 'vue'
 
 const store = useStore()
-const { output, editor, editorContent, isShowCssEditor } = storeToRefs(store)
+const displayStore = useDisplayStore()
+const { isDark, output, editor, editorContent } = storeToRefs(store)
+const { isShowCssEditor } = storeToRefs(displayStore)
 
 const {
   editorRefresh,
@@ -36,36 +43,37 @@ const {
   formatContent,
   importMarkdownContent,
   resetStyleConfirm,
-  toggleShowInsertFormDialog,
-  toggleShowUploadImgDialog,
 } = store
 
-const isImgLoading = ref(false)
-const timeout = ref(0)
-const mouseLeft = ref(0)
-const mouseTop = ref(0)
-const rightClickMenuVisible = ref(false)
+const {
+  toggleShowInsertFormDialog,
+  toggleShowUploadImgDialog,
+} = displayStore
 
-const preview = ref(null)
+const isImgLoading = ref(false)
+const timeout = ref<NodeJS.Timeout>()
+
+const preview = ref<typeof ElCol | null>(null)
 
 // 使浏览区与编辑区滚动条建立同步联系
 function leftAndRightScroll() {
-  const scrollCB = (text) => {
-    let source, target
+  const scrollCB = (text: string) => {
+    let source: HTMLElement
+    let target: HTMLElement
 
     clearTimeout(timeout.value)
     if (text === `preview`) {
-      source = preview.value.$el
-      target = document.querySelector(`.CodeMirror-scroll`)
+      source = preview.value!.$el
+      target = document.querySelector<HTMLElement>(`.CodeMirror-scroll`)!
 
-      editor.value.off(`scroll`, editorScrollCB)
+      editor.value!.off(`scroll`, editorScrollCB)
       timeout.value = setTimeout(() => {
-        editor.value.on(`scroll`, editorScrollCB)
+        editor.value!.on(`scroll`, editorScrollCB)
       }, 300)
     }
-    else if (text === `editor`) {
-      source = document.querySelector(`.CodeMirror-scroll`)
-      target = preview.value.$el
+    else {
+      source = document.querySelector<HTMLElement>(`.CodeMirror-scroll`)!
+      target = preview.value!.$el
 
       target.removeEventListener(`scroll`, previewScrollCB, false)
       timeout.value = setTimeout(() => {
@@ -88,8 +96,8 @@ function leftAndRightScroll() {
     scrollCB(`preview`)
   }
 
-  preview.value.$el.addEventListener(`scroll`, previewScrollCB, false)
-  editor.value.on(`scroll`, editorScrollCB)
+  (preview.value!.$el).addEventListener(`scroll`, previewScrollCB, false)
+  editor.value!.on(`scroll`, editorScrollCB)
 }
 
 onMounted(() => {
@@ -119,35 +127,7 @@ function endCopy() {
   }, 800)
 }
 
-function onMenuEvent(type) {
-  switch (type) {
-    case `insertPic`:
-      toggleShowUploadImgDialog()
-      break
-    case `insertTable`:
-      toggleShowInsertFormDialog()
-      break
-    case `resetStyle`:
-      resetStyleConfirm()
-      break
-    case `importMarkdown`:
-      importMarkdownContent()
-      break
-    case `exportMarkdown`:
-      exportEditorContent2MD()
-      break
-    case `exportHtml`:
-      exportEditorContent2HTML()
-      break
-    case `formatMarkdown`:
-      formatContent()
-      break
-    default:
-      break
-  }
-}
-
-function beforeUpload(file) {
+function beforeUpload(file: File) {
   // validate image
   const checkResult = checkImage(file)
   if (!checkResult.ok) {
@@ -169,85 +149,90 @@ function beforeUpload(file) {
 }
 
 // 图片上传结束
-function uploaded(imageUrl) {
-  console.log(`图片上传之后: `, imageUrl)
+function uploaded(imageUrl: string) {
   if (!imageUrl) {
     ElMessage.error(`上传图片未知异常`)
     return
   }
   toggleShowUploadImgDialog(false)
   // 上传成功，获取光标
-  const cursor = editor.value.getCursor()
+  const cursor = editor.value!.getCursor()
   const markdownImage = `![](${imageUrl})`
   // 将 Markdown 形式的 URL 插入编辑框光标所在位置
-  editor.value.replaceSelection(`\n${markdownImage}\n`, cursor)
+  toRaw(store.editor!).replaceSelection(`\n${markdownImage}\n`, cursor as any)
   ElMessage.success(`图片上传成功`)
-  formatContent()
-  onEditorRefresh()
 }
-function uploadImage(file, cb) {
+function uploadImage(file: File, cb?: { (url: any): void, (arg0: unknown): void } | undefined) {
   isImgLoading.value = true
+
   toBase64(file)
-    .then((base64Content) => {
-      fileApi
-        .fileUpload(base64Content, file)
-        .then((url) => {
-          console.log(url)
-          cb ? cb(url) : uploaded(url)
-        })
-        .catch((err) => {
-          ElMessage.error(err.message)
-        })
+    .then(base64Content => fileApi.fileUpload(base64Content, file))
+    .then((url) => {
+      if (cb) {
+        cb(url)
+      }
+      else {
+        uploaded(url)
+      }
     })
     .catch((err) => {
       ElMessage.error(err.message)
     })
-  isImgLoading.value = false
+    .finally(() => {
+      isImgLoading.value = false
+    })
 }
 
-const changeTimer = ref(0)
+const changeTimer = ref<NodeJS.Timeout>()
+
+// 监听暗色模式并更新编辑器
+watch(isDark, () => {
+  const theme = isDark.value ? `darcula` : `xq-light`
+  toRaw(editor.value)?.setOption?.(`theme`, theme)
+})
 
 // 初始化编辑器
 function initEditor() {
-  const editorDom = document.querySelector(`#editor`)
+  const editorDom = document.querySelector<HTMLTextAreaElement>(`#editor`)!
 
   if (!editorDom.value) {
     editorDom.value = editorContent.value
   }
   editor.value = CodeMirror.fromTextArea(editorDom, {
     mode: `text/x-markdown`,
-    theme: `xq-light`,
+    theme: isDark.value ? `darcula` : `xq-light`,
     lineNumbers: false,
     lineWrapping: true,
     styleActiveLine: true,
     autoCloseBrackets: true,
     extraKeys: {
-      [`${modPrefix}-F`]: function autoFormat(editor) {
-        const doc = formatDoc(editor.getValue(0))
-        editor.setValue(doc)
+      [`${shiftKey}-${altKey}-F`]: function autoFormat(editor) {
+        formatDoc(editor.getValue()).then((doc) => {
+          editor.setValue(doc)
+        })
       },
-      [`${modPrefix}-B`]: function bold(editor) {
+      [`${ctrlKey}-B`]: function bold(editor) {
         const selected = editor.getSelection()
         editor.replaceSelection(`**${selected}**`)
       },
-      [`${modPrefix}-I`]: function italic(editor) {
+      [`${ctrlKey}-I`]: function italic(editor) {
         const selected = editor.getSelection()
         editor.replaceSelection(`*${selected}*`)
       },
-      [`${modPrefix}-D`]: function del(editor) {
+      [`${ctrlKey}-D`]: function del(editor) {
         const selected = editor.getSelection()
         editor.replaceSelection(`~~${selected}~~`)
       },
-      [`${modPrefix}-K`]: function italic(editor) {
+      [`${ctrlKey}-K`]: function italic(editor) {
         const selected = editor.getSelection()
         editor.replaceSelection(`[${selected}]()`)
       },
-      [`${modPrefix}-E`]: function code(editor) {
+      [`${ctrlKey}-E`]: function code(editor) {
         const selected = editor.getSelection()
         editor.replaceSelection(`\`${selected}\``)
       },
       // 预备弃用
-      [`${modPrefix}-L`]: function code(editor) {
+      [`${ctrlKey}-L`]: function code(editor) {
         const selected = editor.getSelection()
         editor.replaceSelection(`\`${selected}\``)
       },
@@ -263,7 +248,7 @@ function initEditor() {
   })
 
   // 粘贴上传图片并插入
-  editor.value.on(`paste`, (cm, e) => {
+  editor.value.on(`paste`, (_cm, e) => {
     if (!(e.clipboardData && e.clipboardData.items) || isImgLoading.value) {
       return
     }
@@ -271,7 +256,7 @@ function initEditor() {
       const item = e.clipboardData.items[i]
       if (item.kind === `file`) {
         // 校验图床参数
-        const pasteFile = item.getAsFile()
+        const pasteFile = item.getAsFile()!
         const isValid = beforeUpload(pasteFile)
         if (!isValid) {
           continue
@@ -280,61 +265,38 @@ function initEditor() {
       }
     }
   })
-
-  editor.value.on(`mousedown`, () => {
-    rightClickMenuVisible.value = false
-  })
-  editor.value.on(`blur`, () => {
-    // !影响到右键菜单的点击事件，右键菜单的点击事件在组件内通过mousedown触发
-    rightClickMenuVisible.value = false
-  })
-  editor.value.on(`scroll`, () => {
-    rightClickMenuVisible.value = false
-  })
 }
 
 const container = ref(null)
 
-// 右键菜单
-function openMenu(e) {
-  const menuMinWidth = 105
-  const offsetLeft = container.value.getBoundingClientRect().left
-  const offsetWidth = container.value.offsetWidth
-  const maxLeft = offsetWidth - menuMinWidth
-  const left = e.clientX - offsetLeft
-  mouseLeft.value = Math.min(maxLeft, left)
-  mouseTop.value = e.clientY + 10
-  rightClickMenuVisible.value = true
-}
-
 // 工具函数，添加格式
-function addFormat(cmd) {
-  editor.value.options.extraKeys[cmd](editor.value)
+function addFormat(cmd: string | number) {
+  (editor.value as any).options.extraKeys[cmd](editor.value)
 }
 
-const codeMirrorWrapper = ref(null)
+const codeMirrorWrapper = ref<ComponentPublicInstance<typeof ElCol> | null>(null)
 
 // 转换 markdown 中的本地图片为线上图片
 // todo 处理事件覆盖
 function mdLocalToRemote() {
-  const dom = codeMirrorWrapper.value.$el
+  const dom = codeMirrorWrapper.value!.$el as HTMLElement
 
   // 上传 md 中的图片
-  const uploadMdImg = async ({ md, list }) => {
+  const uploadMdImg = async ({ md, list }: { md: { str: string, path: string, file: File }, list: { path: string, file: File }[] }) => {
     const mdImgList = [
       ...(md.str.matchAll(/!\[(.*?)\]\((.*?)\)/g) || []),
     ].filter((item) => {
       return item // 获取所有相对地址的图片
     })
-    const root = md.path.match(/.+?\//)[0]
-    const resList = await Promise.all(
+    const root = md.path.match(/.+?\//)![0]
+    const resList = await Promise.all<{ matchStr: string, url: string }>(
       mdImgList.map((item) => {
         return new Promise((resolve) => {
           let [, , matchStr] = item
           matchStr = matchStr.replace(/^.\//, ``) // 处理 ./img/ 为 img/ 统一相对路径风格
           const { file }
                 = list.find(f => f.path === `${root}${matchStr}`) || {}
-          uploadImage(file, (url) => {
+          uploadImage(file!, (url) => {
             resolve({ matchStr, url })
           })
         })
@@ -345,17 +307,16 @@ function mdLocalToRemote() {
         .replace(`](./${item.matchStr})`, `](${item.url})`)
         .replace(`](${item.matchStr})`, `](${item.url})`)
     })
-    editor.value.setValue(md.str)
-    console.log(`resList`, resList, md.str)
+    editor.value!.setValue(md.str)
   }
 
   dom.ondragover = evt => evt.preventDefault()
-  dom.ondrop = async (evt) => {
+  dom.ondrop = async (evt: any) => {
     evt.preventDefault()
     for (const item of evt.dataTransfer.items) {
-      item.getAsFileSystemHandle().then(async (handle) => {
+      item.getAsFileSystemHandle().then(async (handle: { kind: string, getFile: () => any }) => {
         if (handle.kind === `directory`) {
-          const list = await showFileStructure(handle)
+          const list = await showFileStructure(handle) as { path: string, file: File }[]
           const md = await getMd({ list })
           uploadMdImg({ md, list })
         }
@@ -368,14 +329,14 @@ function mdLocalToRemote() {
   }
 
   // 从文件列表中查找一个 md 文件并解析
-  async function getMd({ list }) {
-    return new Promise((resolve) => {
-      const { path, file } = list.find(item => item.path.match(/\.md$/))
+  async function getMd({ list }: { list: { path: string, file: File }[] }) {
+    return new Promise<{ str: string, file: File, path: string }>((resolve) => {
+      const { path, file } = list.find(item => item.path.match(/\.md$/))!
       const reader = new FileReader()
-      reader.readAsText(file, `UTF-8`)
+      reader.readAsText(file!, `UTF-8`)
       reader.onload = (evt) => {
         resolve({
-          str: evt.target.result,
+          str: evt.target!.result as string,
           file,
           path,
         })
@@ -384,7 +345,7 @@ function mdLocalToRemote() {
   }
 
   // 转换文件系统句柄中的文件为文件列表
-  async function showFileStructure(root) {
+  async function showFileStructure(root: any) {
     const result = []
     let cwd = ``
     try {
@@ -422,71 +383,85 @@ onMounted(() => {
 </script>
 
 <template>
-  <div ref="container" class="container">
-    <el-container>
-      <el-header class="editor__header">
-        <EditorHeader
-          @add-format="addFormat"
-          @format-content="formatContent"
-          @start-copy="startCopy"
-          @end-copy="endCopy"
-        />
-      </el-header>
-      <el-main class="container-main">
-        <el-row class="container-main-section">
-          <el-col
-            ref="codeMirrorWrapper"
-            :span="isShowCssEditor ? 8 : 12"
-            class="codeMirror-wrapper"
-            :class="{
-              'order-1': !store.isEditOnLeft,
-            }"
-            @contextmenu.prevent="openMenu"
-          >
-            <textarea
-              id="editor"
-              type="textarea"
-              placeholder="Your markdown text here."
-            />
-          </el-col>
-          <el-col
-            id="preview"
-            ref="preview"
-            :span="isShowCssEditor ? 8 : 12"
-            class="preview-wrapper"
-          >
-            <div id="output-wrapper" :class="{ output_night: !backLight }">
-              <div class="preview">
-                <section id="output" v-html="output" />
-                <div v-if="isCoping" class="loading-mask">
-                  <div class="loading-mask-box">
-                    <div class="loading__img" />
-                    <span>正在生成</span>
-                  </div>
+  <div ref="container" class="container flex flex-col">
+    <EditorHeader
+      @add-format="addFormat"
+      @format-content="formatContent"
+      @start-copy="startCopy"
+      @end-copy="endCopy"
+    />
+    <main class="container-main flex-1">
+      <el-row class="container-main-section h-full border-1">
+        <ElCol
+          ref="codeMirrorWrapper"
+          :span="isShowCssEditor ? 8 : 12"
+          class="codeMirror-wrapper border-r-1"
+          :class="{
+            'order-1': !store.isEditOnLeft,
+          }"
+        >
+          <ContextMenu>
+            <ContextMenuTrigger>
+              <textarea
+                id="editor"
+                type="textarea"
+                placeholder="Your markdown text here."
+              />
+            </ContextMenuTrigger>
+            <ContextMenuContent class="w-64">
+              <ContextMenuItem inset @click="toggleShowUploadImgDialog()">
+                上传图片
+              </ContextMenuItem>
+              <ContextMenuItem inset @click="toggleShowInsertFormDialog()">
+                插入表格
+              </ContextMenuItem>
+              <ContextMenuItem inset @click="resetStyleConfirm()">
+                恢复默认样式
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem inset @click="importMarkdownContent()">
+                导入 .md 文档
+              </ContextMenuItem>
+              <ContextMenuItem inset @click="exportEditorContent2MD()">
+                导出 .md 文档
+              </ContextMenuItem>
+              <ContextMenuItem inset @click="exportEditorContent2HTML()">
+                导出 .html
+              </ContextMenuItem>
+              <ContextMenuItem inset @click="formatContent()">
+                格式化
+                <ContextMenuShortcut>{{ altSign }} + {{ shiftSign }} + F</ContextMenuShortcut>
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        </ElCol>
+        <ElCol
+          id="preview"
+          ref="preview"
+          :span="isShowCssEditor ? 8 : 12"
+          class="preview-wrapper p-5"
+        >
+          <div id="output-wrapper" :class="{ output_night: !backLight }">
+            <div class="preview border shadow-xl">
+              <section id="output" v-html="output" />
+              <div v-if="isCoping" class="loading-mask">
+                <div class="loading-mask-box">
+                  <div class="loading__img" />
+                  <span>正在生成</span>
                 </div>
               </div>
             </div>
-          </el-col>
-          <CssEditor />
-        </el-row>
-      </el-main>
-    </el-container>
+          </div>
+        </ElCol>
+        <CssEditor />
+      </el-row>
+    </main>
 
     <UploadImgDialog
-      @before-upload="beforeUpload"
       @upload-image="uploadImage"
-      @uploaded="uploaded"
     />
 
     <InsertFormDialog />
-
-    <RightClickMenu
-      :visible="rightClickMenuVisible"
-      :left="mouseLeft"
-      :top="mouseTop"
-      @menu-tick="onMenuEvent"
-      @close-menu="rightClickMenuVisible = false"
-    />
 
     <RunLoading />
   </div>
@@ -498,18 +473,15 @@ onMounted(() => {
 
 <style lang="less" scoped>
 .container {
-  height: 100%;
+  height: 100vh;
   min-width: 100%;
   padding: 0;
 }
 
 .container-main {
+  overflow: hidden;
   padding: 20px;
   padding-top: 0;
-}
-
-.container-main-section {
-  height: 100%;
 }
 
 #output-wrapper {

@@ -1,42 +1,30 @@
-<script setup>
+<script setup lang="ts">
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+  MenubarContent,
+  MenubarItem,
+  MenubarMenu,
+  MenubarTrigger,
+} from '@/components/ui/menubar'
+import { useDisplayStore } from '@/stores'
+import { TableIcon, UploadCloudIcon } from 'lucide-vue-next'
 
-import { useStore } from '@/stores'
-
-const store = useStore()
-
-const {
-  toggleShowInsertFormDialog,
-  toggleShowUploadImgDialog,
-} = store
+const { toggleShowInsertFormDialog, toggleShowUploadImgDialog } = useDisplayStore()
 </script>
 
 <template>
-  <DropdownMenu>
-    <DropdownMenuTrigger>
+  <MenubarMenu>
+    <MenubarTrigger>
       编辑
-      <el-icon class="ml-2">
-        <ElIconArrowDown />
-      </el-icon>
-    </DropdownMenuTrigger>
-    <DropdownMenuContent>
-      <DropdownMenuItem @click="toggleShowUploadImgDialog()">
-        <el-icon class="mr-2 h-4 w-4">
-          <ElIconUpload />
-        </el-icon>
+    </MenubarTrigger>
+    <MenubarContent align="start">
+      <MenubarItem @click="toggleShowUploadImgDialog()">
+        <UploadCloudIcon class="mr-2 h-4 w-4" />
         上传图片
-      </DropdownMenuItem>
-      <DropdownMenuItem @click="toggleShowInsertFormDialog()">
-        <el-icon class="mr-2 h-4 w-4">
-          <ElIconGrid />
-        </el-icon>
+      </MenubarItem>
+      <MenubarItem @click="toggleShowInsertFormDialog()">
+        <TableIcon class="mr-2 h-4 w-4" />
         插入表格
-      </DropdownMenuItem>
-    </DropdownMenuContent>
-  </DropdownMenu>
+      </MenubarItem>
+    </MenubarContent>
+  </MenubarMenu>
 </template>
